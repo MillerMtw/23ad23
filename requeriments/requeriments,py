@@ -1,15 +1,13 @@
+import subprocess
+import sys
+import os
+from pathlib import Path
+import urllib.request
+
 PACKAGES = [
-    "Pillow",
-    "numpy",
-    "opencv-python",
-    "mss",
-    "dxcam",
-    "onnxruntime",
-    "ultralytics",
-    "vgamepad",
-    "pygame",
-    "pystray",
-    "dearpygui"
+    "Pillow", "numpy", "opencv-python", "mss", "dxcam",
+    "onnxruntime", "ultralytics", "vgamepad", "pygame",
+    "pystray", "dearpygui"
 ]
 
 MODELS = {
@@ -18,10 +16,54 @@ MODELS = {
     "Extreme.onnx": "https://download1348.mediafire.com/nia9zt4924agEIyT4GMR12l2CeBbq6o7la4aFW8aGSVO7DS91swCv0Lhrg3ZoOZsAHu4AV9VHtBHGBMglM4yNUDROILbPsPGivy9TG2GwR2y_C4F9I4NdmV8W74ZtuN9fgJaWSQzjf1SWvaKNnS_MtCCp8IXMu2G1pWdZGReWRj4Yg/jrzw0tfdeia24tv/Extreme.onnx"
 }
 
-NODEJS = {
-    "install_command": "winget install OpenJS.NodeJS.LTS --silent"
-}
+def install_package(package):
+    print(f"Installing {package}...")
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "--user", package])
+        print(f"✓ {package} installed")
+        return True
+    except:
+        print(f"✗ Error installing {package}")
+        return False
 
-EXPRESS = {
-    "install_command": "npm install -g express"
-}
+def download_file(url, dest_path):
+    print(f"Downloading {os.path.basename(dest_path)}...")
+    try:
+        urllib.request.urlretrieve(url, dest_path)
+        print(f"✓ Downloaded {os.path.basename(dest_path)}")
+        return True
+    except Exception as e:
+        print(f"✗ Error: {e}")
+        return False
+
+def main():
+    print("=" * 60)
+    print("Vykron Installer")
+    print("=" * 60)
+    
+    print(f"\nInstalling {len(PACKAGES)} packages...")
+    print("-" * 40)
+    for pkg in PACKAGES:
+        install_package(pkg)
+    
+    print("\n" + "=" * 60)
+    print("Downloading models...")
+    print("=" * 60)
+    
+    models_path = Path(os.path.expanduser("~/Documents")) / "VykronAI" / "models"
+    models_path.mkdir(parents=True, exist_ok=True)
+    print(f"Models folder: {models_path}")
+    
+    for name, url in MODELS.items():
+        dest = models_path / name
+        if dest.exists():
+            print(f"{name} already exists, skipping")
+        else:
+            download_file(url, dest)
+    
+    print("\n" + "=" * 60)
+    print("Installation complete!")
+    print("=" * 60)
+
+if __name__ == "__main__":
+    main()
