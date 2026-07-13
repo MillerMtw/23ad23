@@ -164,9 +164,10 @@ function saveUserSettings(username, sessionData) {
 let realStatus = null;
 
 function scanModels() {
-  const dirs = [
-    path.join(process.env.USERPROFILE || '.', 'Documents', 'VykronAI', 'models')
-  ];
+
+  const modelsDir = process.env.MODELS_PATH || path.join(process.env.USERPROFILE, 'Documents', 'VykronAI', 'models');
+  const dirs = [modelsDir];
+
   for (const dir of dirs) {
     try {
       if (!fs.existsSync(dir)) continue;
@@ -174,11 +175,13 @@ function scanModels() {
       const models = files.filter(f => (f.endsWith('.onnx') || f.endsWith('.pt')) && !f.toUpperCase().includes('DERANGED'))
                          .map(f => f.replace(/\.(onnx|pt)$/i, ''));
       if (models.length > 0) return models;
-    } catch {}
+    } catch (err) {
+
+('Error', dir, err.message);
+    }
   }
   return [];
 }
-
 app.use(express.json());
 
 // In-memory database of registered users
