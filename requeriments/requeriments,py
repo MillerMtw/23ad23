@@ -1,16 +1,30 @@
-Pillow
-numpy
-opencv-python
-mss
-dxcam
-onnxruntime
-ultralytics
-vgamepad
-pygame
-pystray
-dearpygui
+# requeriments.py - Configuration file for VykronAI installer
 
-# Models (MediaFire URLs)
-# Performance.onnx: https://download1591.mediafire.com/wdjovivv7mmgkcU3v7BNl6MeTlQPI_jIMqom7GZKiZx_n-e4ctFLmjPezxotFbNxgm42mk_ysM7733E114FzO5XBJ8nVS430j0W4JR2LAz86YOAmoNvjeSGLDHCo3ZnXntOmljsjpmExMzRhER4P23_7Z9epgoAunMbBPkHDfjmMDg/0ua277wjyxl0nzx/Performance.onnx
-# Balance.onnx: https://download941.mediafire.com/ps84sxxvlkcgKHbZim7uKbwcj23Dl9wS-Me8pomacqixd1tZwK5tJX6jneuVinfLOuMG9oRbleTOr_yvZTjkXCfBeWvIyxhUf0E7tojYRGrY7ceBLzqU6uXh9x6fT07LfKeBvSBKQrLxv5T3YrrjWRH1eAzPXcpdiEustMp84cI-7g/ulbaxuknakhfv93/Balance.onnx
-# Extreme.onnx: https://download1348.mediafire.com/nia9zt4924agEIyT4GMR12l2CeBbq6o7la4aFW8aGSVO7DS91swCv0Lhrg3ZoOZsAHu4AV9VHtBHGBMglM4yNUDROILbPsPGivy9TG2GwR2y_C4F9I4NdmV8W74ZtuN9fgJaWSQzjf1SWvaKNnS_MtCCp8IXMu2G1pWdZGReWRj4Yg/jrzw0tfdeia24tv/Extreme.onnx
+PACKAGES = [
+    "Pillow",
+    "numpy",
+    "opencv-python",
+    "mss",
+    "dxcam",
+    "onnxruntime",
+    "ultralytics",
+    "vgamepad",
+    "pygame",
+    "pystray",
+    "dearpygui"
+]
+
+MODELS = {
+    "Performance.onnx": "https://download1591.mediafire.com/wdjovivv7mmgkcU3v7BNl6MeTlQPI_jIMqom7GZKiZx_n-e4ctFLmjPezxotFbNxgm42mk_ysM7733E114FzO5XBJ8nVS430j0W4JR2LAz86YOAmoNvjeSGLDHCo3ZnXntOmljsjpmExMzRhER4P23_7Z9epgoAunMbBPkHDfjmMDg/0ua277wjyxl0nzx/Performance.onnx",
+    "Balance.onnx": "https://download941.mediafire.com/ps84sxxvlkcgKHbZim7uKbwcj23Dl9wS-Me8pomacqixd1tZwK5tJX6jneuVinfLOuMG9oRbleTOr_yvZTjkXCfBeWvIyxhUf0E7tojYRGrY7ceBLzqU6uXh9x6fT07LfKeBvSBKQrLxv5T3YrrjWRH1eAzPXcpdiEustMp84cI-7g/ulbaxuknakhfv93/Balance.onnx",
+    "Extreme.onnx": "https://download1348.mediafire.com/nia9zt4924agEIyT4GMR12l2CeBbq6o7la4aFW8aGSVO7DS91swCv0Lhrg3ZoOZsAHu4AV9VHtBHGBMglM4yNUDROILbPsPGivy9TG2GwR2y_C4F9I4NdmV8W74ZtuN9fgJaWSQzjf1SWvaKNnS_MtCCp8IXMu2G1pWdZGReWRj4Yg/jrzw0tfdeia24tv/Extreme.onnx"
+}
+
+NODEJS = {
+    "version": "LTS",
+    "install_command": "winget install OpenJS.NodeJS.LTS --silent"
+}
+
+EXPRESS = {
+    "install_command": "npm install -g express"
+}
