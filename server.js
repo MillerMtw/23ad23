@@ -65,7 +65,7 @@ const LOG_FILE = path.join(process.env.TEMP || '.', 'Vykron', 'server.log');
 // Detect correct Documents folder (OneDrive or regular)
 const oneDriveDocs = path.join(process.env.USERPROFILE || '.', 'OneDrive', 'Documents');
 const regularDocs = path.join(process.env.USERPROFILE || '.', 'Documents');
-const SETTINGS_DIR = path.join((fs.existsSync(oneDriveDocs) ? oneDriveDocs : regularDocs), 'Vykron Configs');
+const SETTINGS_DIR = path.join((fs.existsSync(oneDriveDocs) ? oneDriveDocs : regularDocs), 'Vykron');
 
 function logToFile(message) {
   try {
@@ -680,7 +680,7 @@ app.post('/api/settings/import', (req, res) => {
 
 // GET Settings folder
 app.get('/api/settings/folder', (req, res) => {
-  return res.json({ ok: true, path: SETTINGS_DIR });
+  return res.json({ ok: true, path: "C:\Users\cuent\Documents\Vykron Configs" });
 });
 
 // POST real status from Python engine
