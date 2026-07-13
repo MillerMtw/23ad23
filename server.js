@@ -165,11 +165,8 @@ let realStatus = null;
 
 function scanModels() {
   const dirs = [
-    process.env.MODELS_PATH, // Prioridad máxima: variable de entorno
-    path.join(process.env.USERPROFILE, 'Documents'), // Busca directamente en Documents
-    path.join(process.env.USERPROFILE, 'Documents', 'VykronAI', 'models') // Estructura antigua (fallback)
-  ].filter(Boolean);
-
+    path.join(process.env.USERPROFILE || '.', 'Documents', 'VykronAI', 'models')
+  ];
   for (const dir of dirs) {
     try {
       if (!fs.existsSync(dir)) continue;
@@ -181,6 +178,8 @@ function scanModels() {
   }
   return [];
 }
+
+app.use(express.json());
 
 // In-memory database of registered users
 let users = {
