@@ -61,7 +61,23 @@ function callJunkieAPI(key) {
 }
 
 const AUTH_FILE = path.join(process.env.TEMP || '.', 'Axyst', 'auth.json');
-const SETTINGS_DIR = path.join(process.env.USERPROFILE || '.', 'Documents', 'VykronAI', 'Settings');
+const LOG_FILE = path.join(process.env.TEMP || '.', 'Vykron', 'server.log');
+// Detect correct Documents folder (OneDrive or regular)
+const oneDriveDocs = path.join(process.env.USERPROFILE || '.', 'OneDrive', 'Documents');
+const regularDocs = path.join(process.env.USERPROFILE || '.', 'Documents');
+const SETTINGS_DIR = path.join((fs.existsSync(oneDriveDocs) ? oneDriveDocs : regularDocs), 'Vykron Configs');
+
+function logToFile(message) {
+  try {
+    const timestamp = new Date().toISOString();
+    const logMessage = `[${timestamp}] ${message}\n`;
+    const logDir = path.dirname(LOG_FILE);
+    if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
+    fs.appendFileSync(LOG_FILE, logMessage);
+  } catch (e) {
+    console.log('Error writing to log file:', e);
+  }
+}
 
 function checkAuth() {
   try {
@@ -79,34 +95,70 @@ function saveAuth(username, password, license_key) {
     fs.writeFileSync(AUTH_FILE, JSON.stringify({ username, password, license_key }));
   } catch {}
 }
-function getUserSettingsFile(username) {
-  if (!username) return null;
+function getProfileFile(profileName) {
+  if (!profileName) return null;
   if (!fs.existsSync(SETTINGS_DIR)) fs.mkdirSync(SETTINGS_DIR, { recursive: true });
-  return path.join(SETTINGS_DIR, `${username}.json`);
+  return path.join(SETTINGS_DIR, `${profileName}.json`);
+}
+function loadProfile(profileName) {
+  try {
+    const file = getProfileFile(profileName);
+    if (file && fs.existsSync(file)) {
+      const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+      data.active = false;
+      data.show_fov_overlay = false;
+      return data;
+    }
+  } catch {}
+  return null;
+}
+function saveProfile(profileName, profileData) {
+  try {
+    logToFile('saveProfile called for: ' + profileName);
+    const file = getProfileFile(profileName);
+    if (file) {
+      fs.writeFileSync(file, JSON.stringify(profileData, null, 2));
+      logToFile('Profile saved successfully');
+    }
+  } catch (e) {
+    logToFile('Error saving profile: ' + e.message);
+  }
 }
 function loadUserSettings(username) {
   try {
-    const file = getUserSettingsFile(username);
-    if (file && fs.existsSync(file)) {
-      const data = JSON.parse(fs.readFileSync(file, 'utf8'));
-      // Always set active to false on load
-      if (data.profiles) {
-        for (const profileName in data.profiles) {
-          data.profiles[profileName].active = false;
-        }
+    // Load all profiles from SETTINGS_DIR
+    if (!fs.existsSync(SETTINGS_DIR)) return null;
+    const files = fs.readdirSync(SETTINGS_DIR).filter(f => f.endsWith('.json'));
+    const profiles = {};
+    for (const file of files) {
+      const profileName = path.basename(file, '.json');
+      const profileData = loadProfile(profileName);
+      if (profileData) {
+        profiles[profileName] = profileData;
       }
-      return data;
+    }
+    if (Object.keys(profiles).length > 0) {
+      return {
+        username: username,
+        profiles: profiles,
+        current_profile: "Default"
+      };
     }
   } catch {}
   return null;
 }
 function saveUserSettings(username, sessionData) {
   try {
-    const file = getUserSettingsFile(username);
-    if (file) {
-      fs.writeFileSync(file, JSON.stringify(sessionData, null, 2));
+    logToFile('saveUserSettings called for: ' + username);
+    // Save each profile individually
+    if (sessionData && sessionData.profiles) {
+      for (const profileName in sessionData.profiles) {
+        saveProfile(profileName, sessionData.profiles[profileName]);
+      }
     }
-  } catch {}
+  } catch (e) {
+    logToFile('Error saving user settings: ' + e.message);
+  }
 }
 
 let realStatus = null;
@@ -302,7 +354,7 @@ app.post('/api/auth/login', async (req, res) => {
     try {
       const lr = await callJunkieAPI(license);
       if (lr.valid) {
-        const uname = username || 'key_user';
+        const uname = username || 'Vykron';
         saveAuth(uname, password || '', license.trim());
         // Load saved settings or use defaults
         const savedSettings = loadUserSettings(uname);
@@ -628,7 +680,7 @@ app.post('/api/settings/import', (req, res) => {
 
 // GET Settings folder
 app.get('/api/settings/folder', (req, res) => {
-  return res.json({ ok: true, path: "C:\\Users\\Default\\Documents\\VykronAI\\Settings" });
+  return res.json({ ok: true, path: "C:\Users\cuent\Documents\Vykron Configs" });
 });
 
 // POST real status from Python engine
@@ -653,14 +705,22 @@ app.get('/api/profiles', (req, res) => {
   if (pythonState && pythonState.available_profiles && (Date.now() - pythonState.timestamp) < 10000) {
     return res.json({ ok: true, profiles: pythonState.available_profiles, current: pythonState.current_profile || 'Default' });
   }
-  if (!activeSession) {
-    return res.json({ ok: true, profiles: ['Default'], current: 'Default' });
+  // Load profiles from SETTINGS_DIR
+  try {
+    if (fs.existsSync(SETTINGS_DIR)) {
+      const files = fs.readdirSync(SETTINGS_DIR).filter(f => f.endsWith('.json'));
+      const profileNames = files.map(f => path.basename(f, '.json'));
+      const currentProfile = activeSession ? (activeSession.current_profile || 'Default') : 'Default';
+      return res.json({
+        ok: true,
+        profiles: profileNames,
+        current: currentProfile
+      });
+    }
+  } catch (e) {
+    logToFile('Error loading profiles: ' + e.message);
   }
-  return res.json({
-    ok: true,
-    profiles: Object.keys(activeSession.profiles),
-    current: activeSession.current_profile || "Default"
-  });
+  return res.json({ ok: true, profiles: ['Default'], current: 'Default' });
 });
 
 // GET Available Models (from Python)
@@ -679,14 +739,26 @@ app.post('/api/settings/save', (req, res) => {
   if (!activeSession) {
     return res.json({ ok: false, message: 'Not logged in.' });
   }
+  // Save all profiles to individual files
+  if (activeSession && activeSession.profiles) {
+    for (const profileName in activeSession.profiles) {
+      saveProfile(profileName, activeSession.profiles[profileName]);
+    }
+  }
   return res.json({ ok: true });
 });
 
 // Shutdown endpoint: update log to "Inactive"
 app.get('/api/shutdown', (req, res) => {
+  logToFile('Shutdown endpoint called');
   const saved = checkAuth();
+  logToFile('Saved auth: ' + JSON.stringify(saved));
   if (saved && saved.username) {
+    logToFile('Setting log to Inactive for: ' + saved.username);
     setLogVercel(saved.username, 'Inactive');
+    logToFile('setLogVercel called');
+  } else {
+    logToFile('No saved user found');
   }
   res.json({ ok: true });
 });
