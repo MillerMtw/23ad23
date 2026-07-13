@@ -878,14 +878,18 @@
       }
     }
 
-    // Logout
-    function logout() {
-      session = null;
-      document.getElementById('dashboard').classList.add('hidden');
-      document.getElementById('auth-page').classList.remove('hidden');
-      showLogin();
-    }
-
+function logout() {
+  session = null;
+  
+  if (eventSource) {
+    eventSource.close();
+    eventSource = null;
+  }
+  
+  document.getElementById('dashboard').classList.add('hidden');
+  document.getElementById('auth-page').classList.remove('hidden');
+  showLogin();
+}
     // Sync input displays
     function updateVal(el, id) {
       const displayEl = document.getElementById(id);
@@ -898,36 +902,38 @@
       }
     }
 
-    // Load initial working values
-    async function loadDashboard() {
-      clearToasts();
-      initDrag();
-      if (session && session.username) {
-        const uDisp = document.getElementById('user-display-name');
-        if (uDisp) uDisp.textContent = session.username;
-      }
-      const r = await api('GET', '/settings');
-      if (r.ok) {
-        applySettings(r);
-        loadProfiles();
-      }
-      const mr = await api('GET', '/models');
-      if (mr.ok && mr.models) {
-        const sel = document.getElementById('model-cb');
-        if (sel) {
-          sel.innerHTML = '';
-          mr.models.forEach(m => {
-            const o = document.createElement('option');
-            o.value = m; o.textContent = m;
-            if (m === mr.current) o.selected = true;
-            sel.appendChild(o);
-          });
-        }
-      }
-      const sr = await api('GET', '/status');
-      if (sr.ok) updateStatus(sr);
+async function loadDashboard() {
+  clearToasts();
+  initDrag();
+  if (session && session.username) {
+    const uDisp = document.getElementById('user-display-name');
+    if (uDisp) uDisp.textContent = session.username;
+  }
+  const r = await api('GET', '/settings');
+  if (r.ok) {
+    applySettings(r);
+    loadProfiles();
+  }
+  const mr = await api('GET', '/models');
+  if (mr.ok && mr.models) {
+    const sel = document.getElementById('model-cb');
+    if (sel) {
+      sel.innerHTML = '';
+      mr.models.forEach(m => {
+        const o = document.createElement('option');
+        o.value = m; o.textContent = m;
+        if (m === mr.current) o.selected = true;
+        sel.appendChild(o);
+      });
     }
+  }
+  const sr = await api('GET', '/status');
+  if (sr.ok) updateStatus(sr);
 
+  if (session) {
+    connectProfileUpdates();
+  }
+}
     function applySettings(s) {
       settingsCache = s;
       _lastSent = {};
@@ -1091,25 +1097,58 @@
       }
     }
 
-    async function loadProfiles() {
-      const r = await api('GET', '/profiles');
-      if (!r || !r.profiles) return;
+async function loadProfiles() {
+  const r = await api('GET', '/profiles');
+  if (!r || !r.profiles) return;
 
-      const cb = document.getElementById('profile-cb');
-      cb.innerHTML = '';
-      
-      for (const p of r.profiles) {
-        const o1 = document.createElement('option');
-        o1.value = p;
-        o1.textContent = p;
-        cb.appendChild(o1);
-      }
+  const cb = document.getElementById('profile-cb');
+  cb.innerHTML = '';
+  
+  for (const p of r.profiles) {
+    const o1 = document.createElement('option');
+    o1.value = p;
+    o1.textContent = p;
+    cb.appendChild(o1);
+  }
 
-      cb.value = r.current || 'Default';
-      
-      const label = document.getElementById('prof-label');
-      if (label) label.textContent = r.current || 'Default';
+  cb.value = r.current || 'Default';
+  
+  const label = document.getElementById('prof-label');
+  if (label) label.textContent = r.current || 'Default';
+}
+
+async function refreshProfiles() {
+  const r = await api('GET', '/profiles');
+  if (!r || !r.profiles) return;
+
+  const cb = document.getElementById('profile-cb');
+  const currentValue = cb.value;
+  cb.innerHTML = '';
+  
+  for (const p of r.profiles) {
+    const o1 = document.createElement('option');
+    o1.value = p;
+    o1.textContent = p;
+    cb.appendChild(o1);
+  }
+
+  if (r.profiles.includes(currentValue)) {
+    cb.value = currentValue;
+  } else if (r.profiles.length > 0) {
+    cb.value = r.profiles[0];
+    if (activeSession) {
+      activeSession.current_profile = cb.value;
+      await api('POST', '/settings', { current_profile: cb.value });
     }
+  } else {
+    cb.innerHTML = '<option value="Default">Default</option>';
+    cb.value = 'Default';
+    if (activeSession) {
+      activeSession.current_profile = 'Default';
+      await api('POST', '/settings', { current_profile: 'Default' });
+    }
+  }
+}
 
     async function switchProfile(p) {
       if (!p) return;
@@ -1439,21 +1478,69 @@
       URL.revokeObjectURL(url);
     }
 
-    async function openSettingsFolder() {
-      const r = await api('GET', '/settings/folder');
-      if (r.ok && r.path) {
-        alert('Internal settings file path:\n' + r.path + '\n\nIn gaming devices, the configuration folder is mounted at this address.');
-      } else {
-        alert('Failed to retrieve folder path');
+async function openSettingsFolder() {
+  const r = await api('GET', '/settings/folder');
+  if (r.ok && r.path) {
+    try {
+      const response = await fetch('/api/open-folder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: r.path })
+      });
+      if (response.ok) {
+        setMsg('Config folder opened: ' + r.path, 'success');
       }
+    } catch (e) {
+      setMsg('Failed to open folder', 'error');
     }
+  } else {
+    setMsg('Failed to retrieve folder path', 'error');
+  }
+}
 
-    // Active connection polling
-    setInterval(async () => {
-      if (!session) return;
-      const r = await api('GET', '/status');
-      if (r.ok) updateStatus(r);
-    }, 2000);
+let eventSource = null;
+
+function connectProfileUpdates() {
+  if (eventSource) {
+    eventSource.close();
+    eventSource = null;
+  }
+
+  try {
+    eventSource = new EventSource('/api/profiles/stream');
+    
+    eventSource.onmessage = function(event) {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'profiles-updated') {
+          refreshProfiles();
+        }
+      } catch (e) {}
+    };
+
+    eventSource.onerror = function() {
+      eventSource.close();
+      eventSource = null;
+      setTimeout(() => {
+        if (session) connectProfileUpdates();
+      }, 5000);
+    };
+
+  } catch (e) {
+    if (!window._fallbackInterval) {
+      window._fallbackInterval = setInterval(async () => {
+        if (!session) return;
+        await refreshProfiles();
+      }, 5000);
+    }
+  }
+}
+
+setInterval(async () => {
+  if (!session) return;
+  const r = await api('GET', '/status');
+  if (r.ok) updateStatus(r);
+}, 2000);
   </script>
 
   <div id="toast-container" class="fixed bottom-6 right-6 z-50 flex flex-col gap-2 max-w-sm pointer-events-none"></div>
