@@ -163,6 +163,22 @@ function saveUserSettings(username, sessionData) {
 
 let realStatus = null;
 
+function scanModels() {
+  const dirs = [
+    path.join(process.env.USERPROFILE || '.', 'Documents', 'VykronAI', 'models')
+  ];
+  for (const dir of dirs) {
+    try {
+      if (!fs.existsSync(dir)) continue;
+      const files = fs.readdirSync(dir);
+      const models = files.filter(f => (f.endsWith('.onnx') || f.endsWith('.pt')) && !f.toUpperCase().includes('DERANGED'))
+                         .map(f => f.replace(/\.(onnx|pt)$/i, ''));
+      if (models.length > 0) return models;
+    } catch {}
+  }
+  return [];
+}
+
 app.use(express.json());
 
 // In-memory database of registered users
@@ -731,14 +747,13 @@ app.get('/api/profiles', (req, res) => {
 });
 
 app.get('/api/models', (req, res) => {
-
-  if (pythonState && pythonState.available_models) {
+  if (pythonState && pythonState.available_models && (Date.now() - pythonState.timestamp) < 10000) {
     const current = pythonState.current_model_name || '';
     const display = current.includes('|') ? current.split('|')[1] : current;
     return res.json({ ok: true, models: pythonState.available_models, current: display });
   }
-
-  return res.json({ ok: true, models: [], current: '' });
+  const scanned = scanModels();
+  return res.json({ ok: true, models: scanned.length ? scanned : ['Balance', 'Extreme', 'Performance'], current: '' });
 });
 
 app.post('/api/settings/save', (req, res) => {
