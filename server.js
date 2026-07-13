@@ -62,7 +62,7 @@ function callJunkieAPI(key) {
 
 const AUTH_FILE = path.join(process.env.TEMP || '.', 'Axyst', 'auth.json');
 const LOG_FILE = path.join(process.env.TEMP || '.', 'Vykron', 'server.log');
-// Detect correct Documents folder (OneDrive or regular)
+
 const oneDriveDocs = path.join(process.env.USERPROFILE || '.', 'OneDrive', 'Documents');
 const regularDocs = path.join(process.env.USERPROFILE || '.', 'Documents');
 const SETTINGS_DIR = path.join((fs.existsSync(oneDriveDocs) ? oneDriveDocs : regularDocs), 'Vykron Configs');
