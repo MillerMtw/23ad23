@@ -1,5 +1,3 @@
-# requeriments.py - Configuration file for VykronAI installer
-
 PACKAGES = [
     "Pillow",
     "numpy",
@@ -21,7 +19,6 @@ MODELS = {
 }
 
 NODEJS = {
-    "version": "LTS",
     "install_command": "winget install OpenJS.NodeJS.LTS --silent"
 }
 
