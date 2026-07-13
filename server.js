@@ -678,9 +678,8 @@ app.post('/api/settings/import', (req, res) => {
   return res.json({ ok: true });
 });
 
-// GET Settings folder
 app.get('/api/settings/folder', (req, res) => {
-  return res.json({ ok: true, path: "C:\Users\cuent\Documents\Vykron Configs" });
+  return res.json({ ok: true, path: SETTINGS_DIR });
 });
 
 // POST real status from Python engine
