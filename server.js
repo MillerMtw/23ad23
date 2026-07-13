@@ -614,16 +614,11 @@ app.post('/api/settings/save', (req, res) => {
   return res.json({ ok: true });
 });
 
-// Shutdown endpoint: update log to "Last active: ..."
+// Shutdown endpoint: update log to "Inactive"
 app.get('/api/shutdown', (req, res) => {
   const saved = checkAuth();
   if (saved && saved.username) {
-    const now = new Date();
-    const m = now.getMonth() + 1, d = now.getDate(), y = now.getFullYear();
-    let h = now.getHours(); const mi = String(now.getMinutes()).padStart(2,'0'), s = String(now.getSeconds()).padStart(2,'0');
-    const ampm = h >= 12 ? 'p.m.' : 'a.m.'; h = h % 12 || 12;
-    const log = `Last active: ${m}/${d}/${y}, ${h}:${mi}:${s} ${ampm}`;
-    setLogVercel(saved.username, log);
+    setLogVercel(saved.username, 'Inactive');
   }
   res.json({ ok: true });
 });
