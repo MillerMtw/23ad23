@@ -574,10 +574,8 @@ app.post('/api/settings', (req, res) => {
   const profileName = activeSession.current_profile || "Default";
   if (!activeSession.profiles[profileName]) activeSession.profiles[profileName] = { ...DEFAULT_SETTINGS };
   const p = activeSession.profiles[profileName];
-  // Apply to activeSession, but prevent activation if not logged in
   if (s.active !== undefined) {
     if (s.active === true && (!activeSession.username || activeSession.username === "Guest")) {
-      // Reject activation if not logged in
       p.active = false;
     } else {
       p.active = s.active;
@@ -608,22 +606,23 @@ app.post('/api/settings', (req, res) => {
     if (!activeSession.profiles[next]) activeSession.profiles[next] = { ...DEFAULT_SETTINGS };
     activeSession.current_profile = next;
   }
-  // Also update pythonState directly so Python sees the change (fallback)
   if (pythonState) {
     for (const [k, v] of Object.entries(s)) {
       if (v !== undefined) pythonState[k] = v;
     }
     pythonState.timestamp = Date.now();
   }
-  // Save settings to file if user is logged in
+  
+  // Guardar todos los perfiles EN DISCO (incluyendo el nuevo)
   if (activeSession && activeSession.username && activeSession.username !== "Guest") {
     saveUserSettings(activeSession.username, activeSession);
   }
-  // Forward instantly to Python's embedded HTTP listener (fire-and-forget)
+  
+  // Forward a Python
   const fwdBody = JSON.stringify(s);
   const fwdReq = http.request({ hostname: '127.0.0.1', port: 5001, method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(fwdBody) } });
-  fwdReq.on('error', () => {}); // Python not running → silently ignore
+  fwdReq.on('error', () => {});
   fwdReq.write(fwdBody);
   fwdReq.end();
   return res.json({ ok: true });
@@ -682,38 +681,64 @@ app.get('/api/settings/folder', (req, res) => {
   return res.json({ ok: true, path: SETTINGS_DIR });
 });
 
-// POST real status from Python engine
 app.post('/api/status', (req, res) => {
   const { active, fps, running, target_locked } = req.body;
   realStatus = { active, fps, running, target_locked, timestamp: Date.now() };
   res.json({ ok: true });
 });
 
-// GET Active Status (real from Python if recent, else fallback)
 app.get('/api/status', (req, res) => {
-  if (realStatus && (Date.now() - realStatus.timestamp) < 5000) {
-    return res.json({ ok: true, active: realStatus.active, fps: realStatus.fps });
-  }
   const profileName = activeSession ? (activeSession.current_profile || "Default") : "Default";
   const p = activeSession ? (activeSession.profiles[profileName] || DEFAULT_SETTINGS) : DEFAULT_SETTINGS;
-  return res.json({ ok: true, active: p.active, fps: 0 });
-});
-
-// GET Available Profiles (from Python if available, else fallback)
-app.get('/api/profiles', (req, res) => {
-  if (pythonState && pythonState.available_profiles && (Date.now() - pythonState.timestamp) < 10000) {
-    return res.json({ ok: true, profiles: pythonState.available_profiles, current: pythonState.current_profile || 'Default' });
+  
+  let fps = 0;
+  if (realStatus && (Date.now() - realStatus.timestamp) < 5000) {
+    fps = realStatus.fps || 0;
   }
-  // Load profiles from SETTINGS_DIR
+  
+  return res.json({ ok: true, active: p.active, fps: fps });
+});
+app.get('/api/profiles', (req, res) => {
   try {
     if (fs.existsSync(SETTINGS_DIR)) {
       const files = fs.readdirSync(SETTINGS_DIR).filter(f => f.endsWith('.json'));
       const profileNames = files.map(f => path.basename(f, '.json'));
+      
+      if (activeSession && activeSession.profiles) {
+        const existingProfiles = {};
+        for (const profileName of profileNames) {
+          if (activeSession.profiles[profileName]) {
+            existingProfiles[profileName] = activeSession.profiles[profileName];
+          } else {
+            const profileData = loadProfile(profileName);
+            if (profileData) {
+              existingProfiles[profileName] = profileData;
+            }
+          }
+        }
+        activeSession.profiles = existingProfiles;
+        
+        if (!profileNames.includes(activeSession.current_profile) && profileNames.length > 0) {
+          activeSession.current_profile = profileNames[0];
+        } else if (profileNames.length === 0) {
+          activeSession.current_profile = 'Default';
+        }
+      }
+      
       const currentProfile = activeSession ? (activeSession.current_profile || 'Default') : 'Default';
+      let finalCurrent = currentProfile;
+      if (!profileNames.includes(currentProfile) && profileNames.length > 0) {
+        finalCurrent = profileNames[0];
+        if (activeSession) activeSession.current_profile = finalCurrent;
+      } else if (profileNames.length === 0) {
+        finalCurrent = 'Default';
+        if (activeSession) activeSession.current_profile = 'Default';
+      }
+      
       return res.json({
         ok: true,
-        profiles: profileNames,
-        current: currentProfile
+        profiles: profileNames.length > 0 ? profileNames : ['Default'],
+        current: finalCurrent
       });
     }
   } catch (e) {
@@ -722,7 +747,6 @@ app.get('/api/profiles', (req, res) => {
   return res.json({ ok: true, profiles: ['Default'], current: 'Default' });
 });
 
-// GET Available Models (from Python)
 app.get('/api/models', (req, res) => {
   if (pythonState && pythonState.available_models && (Date.now() - pythonState.timestamp) < 10000) {
     const current = pythonState.current_model_name || '';
@@ -733,21 +757,36 @@ app.get('/api/models', (req, res) => {
   return res.json({ ok: true, models: scanned.length ? scanned : ['Balance', 'Extreme', 'Performance'], current: '' });
 });
 
-// POST Save Current Settings as profile configuration
 app.post('/api/settings/save', (req, res) => {
   if (!activeSession) {
     return res.json({ ok: false, message: 'Not logged in.' });
   }
-  // Save all profiles to individual files
-  if (activeSession && activeSession.profiles) {
-    for (const profileName in activeSession.profiles) {
-      saveProfile(profileName, activeSession.profiles[profileName]);
+  
+  // Sincronizar con disco antes de guardar (solo perfiles existentes)
+  const currentProfiles = {};
+  if (fs.existsSync(SETTINGS_DIR)) {
+    const files = fs.readdirSync(SETTINGS_DIR).filter(f => f.endsWith('.json'));
+    for (const file of files) {
+      const profileName = path.basename(file, '.json');
+      if (activeSession.profiles[profileName]) {
+        currentProfiles[profileName] = activeSession.profiles[profileName];
+      } else {
+        const data = loadProfile(profileName);
+        if (data) {
+          currentProfiles[profileName] = data;
+        }
+      }
     }
+  }
+  activeSession.profiles = currentProfiles;
+  
+  // Guardar solo los perfiles que existen
+  for (const profileName in activeSession.profiles) {
+    saveProfile(profileName, activeSession.profiles[profileName]);
   }
   return res.json({ ok: true });
 });
 
-// Shutdown endpoint: update log to "Inactive"
 app.get('/api/shutdown', (req, res) => {
   logToFile('Shutdown endpoint called');
   const saved = checkAuth();
@@ -762,10 +801,81 @@ app.get('/api/shutdown', (req, res) => {
   res.json({ ok: true });
 });
 
-// Serve static assets directly from the root
+app.post('/api/open-folder', (req, res) => {
+  const { path: folderPath } = req.body;
+  if (!folderPath) {
+    return res.status(400).json({ ok: false, message: 'No path provided' });
+  }
+  
+  try {
+    const { exec } = require('child_process');
+    exec(`explorer.exe "${folderPath}"`, (error) => {
+      if (error) {
+        return res.status(500).json({ ok: false, message: 'Failed to open folder' });
+      }
+      res.json({ ok: true });
+    });
+  } catch (e) {
+    res.status(500).json({ ok: false, message: 'Error: ' + e.message });
+  }
+});
+
+const { watch } = require('fs');
+
+let profileWatcher = null;
+let sseClients = [];
+
+function startProfileWatcher() {
+  if (profileWatcher) return;
+  
+  try {
+    if (!fs.existsSync(SETTINGS_DIR)) {
+      fs.mkdirSync(SETTINGS_DIR, { recursive: true });
+    }
+    
+    profileWatcher = watch(SETTINGS_DIR, { persistent: false }, (eventType, filename) => {
+      if (filename && filename.endsWith('.json')) {
+        const data = JSON.stringify({ type: 'profiles-updated', timestamp: Date.now() });
+        sseClients.forEach(client => {
+          try {
+            client.write(`data: ${data}\n\n`);
+          } catch (e) {}
+        });
+      }
+    });
+    
+    profileWatcher.on('error', (err) => {
+      console.error('Watcher error:', err);
+    });
+    
+    console.log('Profile watcher started');
+  } catch (e) {
+    console.error('Error starting profile watcher:', e);
+  }
+}
+
+app.get('/api/profiles/stream', (req, res) => {
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache',
+    'Connection': 'keep-alive',
+    'Access-Control-Allow-Origin': '*'
+  });
+
+  const newClient = res;
+  sseClients.push(newClient);
+  
+  newClient.write(`data: ${JSON.stringify({ type: 'connected' })}\n\n`);
+  
+  startProfileWatcher();
+
+  req.on('close', () => {
+    sseClients = sseClients.filter(client => client !== newClient);
+  });
+});
+
 app.use(express.static(__dirname));
 
-// Fallback to serving index.html
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
