@@ -1,0 +1,16 @@
+{
+  "name": "vykron",
+  "version": "1.0.0",
+  "description": "Vykron AI",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "dev": "node server.js",
+    "build": "echo 'No build step required'",
+    "lint": "echo 'No linting step required'",
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
