@@ -150,7 +150,7 @@ function loadUserSettings(username) {
 function saveUserSettings(username, sessionData) {
   try {
     logToFile('saveUserSettings called for: ' + username);
-    // Save each profile individually
+
     if (sessionData && sessionData.profiles) {
       for (const profileName in sessionData.profiles) {
         saveProfile(profileName, sessionData.profiles[profileName]);
@@ -165,8 +165,7 @@ let realStatus = null;
 
 function scanModels() {
   const dirs = [
-    path.join(__dirname, 'models'),
-    path.join(process.env.TEMP || '.', 'Vykron', 'models')
+    path.join(process.env.USERPROFILE || '.', 'Documents', 'VykronAI', 'models')
   ];
   for (const dir of dirs) {
     try {
