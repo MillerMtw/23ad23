@@ -61,6 +61,8 @@ function callJunkieAPI(key) {
 }
 
 const AUTH_FILE = path.join(process.env.TEMP || '.', 'Axyst', 'auth.json');
+const SETTINGS_DIR = path.join(process.env.USERPROFILE || '.', 'Documents', 'VykronAI', 'Settings');
+
 function checkAuth() {
   try {
     if (fs.existsSync(AUTH_FILE)) {
@@ -75,6 +77,35 @@ function saveAuth(username, password, license_key) {
     const dir = path.dirname(AUTH_FILE);
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(AUTH_FILE, JSON.stringify({ username, password, license_key }));
+  } catch {}
+}
+function getUserSettingsFile(username) {
+  if (!username) return null;
+  if (!fs.existsSync(SETTINGS_DIR)) fs.mkdirSync(SETTINGS_DIR, { recursive: true });
+  return path.join(SETTINGS_DIR, `${username}.json`);
+}
+function loadUserSettings(username) {
+  try {
+    const file = getUserSettingsFile(username);
+    if (file && fs.existsSync(file)) {
+      const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+      // Always set active to false on load
+      if (data.profiles) {
+        for (const profileName in data.profiles) {
+          data.profiles[profileName].active = false;
+        }
+      }
+      return data;
+    }
+  } catch {}
+  return null;
+}
+function saveUserSettings(username, sessionData) {
+  try {
+    const file = getUserSettingsFile(username);
+    if (file) {
+      fs.writeFileSync(file, JSON.stringify(sessionData, null, 2));
+    }
   } catch {}
 }
 
@@ -273,12 +304,16 @@ app.post('/api/auth/login', async (req, res) => {
       if (lr.valid) {
         const uname = username || 'key_user';
         saveAuth(uname, password || '', license.trim());
-        activeSession = {
+        // Load saved settings or use defaults
+        const savedSettings = loadUserSettings(uname);
+        activeSession = savedSettings || {
           username: uname,
           license: license.trim(),
           profiles: { "Default": { ...DEFAULT_SETTINGS } },
           current_profile: "Default"
         };
+        activeSession.username = uname;
+        activeSession.license = license.trim();
         setLogVercel(uname, 'Active Now');
         return res.json({ ok: true, session: { username: uname, license: license.trim() } });
       }
@@ -302,11 +337,14 @@ app.post('/api/auth/login', async (req, res) => {
           const lr = await callJunkieAPI(savedLicense);
           if (lr.valid) {
             saveAuth(u, p, savedLicense);
-            activeSession = {
+            const savedSettings = loadUserSettings(u);
+            activeSession = savedSettings || {
               username: u, license: savedLicense,
               profiles: { "Default": { ...DEFAULT_SETTINGS } },
               current_profile: "Default"
             };
+            activeSession.username = u;
+            activeSession.license = savedLicense;
             setLogVercel(u, 'Active Now');
             return res.json({ ok: true, session: { username: u, license: savedLicense } });
           }
@@ -326,11 +364,14 @@ app.post('/api/auth/login', async (req, res) => {
         if (saved && saved.username === u) {
           const lr = await callJunkieAPI(saved.license_key);
           if (lr.valid) {
-            activeSession = {
+            const savedSettings = loadUserSettings(u);
+            activeSession = savedSettings || {
               username: u, license: saved.license_key,
               profiles: { "Default": { ...DEFAULT_SETTINGS } },
               current_profile: "Default"
             };
+            activeSession.username = u;
+            activeSession.license = saved.license_key;
             setLogVercel(u, 'Active Now');
             return res.json({ ok: true, session: { username: u, license: saved.license_key } });
           }
@@ -349,11 +390,14 @@ app.post('/api/auth/login', async (req, res) => {
           return res.json({ ok: false, message: 'License expired. Enter a new key.', redeem: true });
         }
         saveAuth(u, p, lk);
-        activeSession = {
+        const savedSettings = loadUserSettings(u);
+        activeSession = savedSettings || {
           username: u, license: lk,
           profiles: { "Default": { ...DEFAULT_SETTINGS } },
           current_profile: "Default"
         };
+        activeSession.username = u;
+        activeSession.license = lk;
         setLogVercel(u, 'Active Now');
         return res.json({ ok: true, session: { username: u, license: lk } });
       }
@@ -366,11 +410,14 @@ app.post('/api/auth/login', async (req, res) => {
           const lr = await callJunkieAPI(saved.license_key);
           if (lr.valid) {
             saveAuth(u, p, saved.license_key);
-            activeSession = {
+            const savedSettings = loadUserSettings(u);
+            activeSession = savedSettings || {
               username: u, license: saved.license_key,
               profiles: { "Default": { ...DEFAULT_SETTINGS } },
               current_profile: "Default"
             };
+            activeSession.username = u;
+            activeSession.license = saved.license_key;
             setLogVercel(u, 'Active Now');
             return res.json({ ok: true, session: { username: u, license: saved.license_key } });
           }
@@ -406,16 +453,22 @@ app.post('/api/auth/register', async (req, res) => {
     if (result && result.message === 'Already used on this PC') {
       await callVercelAPI('login', u, password, lk);
       saveAuth(u, password, lk);
-       activeSession = { username: u, license: lk, profiles: { "Default": { ...DEFAULT_SETTINGS } }, current_profile: "Default" };
-       setLogVercel(u, 'Active Now');
-       return res.json({ ok: true, message: 'License updated for existing user' });
+      const savedSettings = loadUserSettings(u);
+      activeSession = savedSettings || { username: u, license: lk, profiles: { "Default": { ...DEFAULT_SETTINGS } }, current_profile: "Default" };
+      activeSession.username = u;
+      activeSession.license = lk;
+      setLogVercel(u, 'Active Now');
+      return res.json({ ok: true, message: 'License updated for existing user' });
     }
     if (result && result.message === 'Username taken') {
       return res.json({ ok: false, message: 'Username already in use' });
     }
     if (result && result.error) return res.json({ ok: false, message: result.error });
     saveAuth(u, password, lk);
-    activeSession = { username: u, license: lk, profiles: { "Default": { ...DEFAULT_SETTINGS } }, current_profile: "Default" };
+    const savedSettings = loadUserSettings(u);
+    activeSession = savedSettings || { username: u, license: lk, profiles: { "Default": { ...DEFAULT_SETTINGS } }, current_profile: "Default" };
+    activeSession.username = u;
+    activeSession.license = lk;
     setLogVercel(u, 'Active Now');
     return res.json({ ok: true, message: 'Account created' });
   } catch (e) {
@@ -439,7 +492,11 @@ app.post('/api/auth/redeem', async (req, res) => {
     } else {
       saveAuth('key_user', '', lk);
     }
-    activeSession = { username: username || 'key_user', license: lk, profiles: { "Default": { ...DEFAULT_SETTINGS } }, current_profile: "Default" };
+    const finalUsername = username || 'key_user';
+    const savedSettings = loadUserSettings(finalUsername);
+    activeSession = savedSettings || { username: finalUsername, license: lk, profiles: { "Default": { ...DEFAULT_SETTINGS } }, current_profile: "Default" };
+    activeSession.username = finalUsername;
+    activeSession.license = lk;
     setLogVercel(activeSession.username, 'Active Now');
     return res.json({ ok: true, session: { username: activeSession.username, license: lk } });
   } catch (e) {
@@ -465,8 +522,15 @@ app.post('/api/settings', (req, res) => {
   const profileName = activeSession.current_profile || "Default";
   if (!activeSession.profiles[profileName]) activeSession.profiles[profileName] = { ...DEFAULT_SETTINGS };
   const p = activeSession.profiles[profileName];
-  // Apply to activeSession
-  if (s.active !== undefined) p.active = s.active;
+  // Apply to activeSession, but prevent activation if not logged in
+  if (s.active !== undefined) {
+    if (s.active === true && (!activeSession.username || activeSession.username === "Guest")) {
+      // Reject activation if not logged in
+      p.active = false;
+    } else {
+      p.active = s.active;
+    }
+  }
   if (s.body_target !== undefined) p.body_target = s.body_target;
   if (s.custom_body_pct !== undefined) p.custom_body_pct = s.custom_body_pct;
   if (s.trigger_mode !== undefined) p.trigger_mode = s.trigger_mode;
@@ -498,6 +562,10 @@ app.post('/api/settings', (req, res) => {
       if (v !== undefined) pythonState[k] = v;
     }
     pythonState.timestamp = Date.now();
+  }
+  // Save settings to file if user is logged in
+  if (activeSession && activeSession.username && activeSession.username !== "Guest") {
+    saveUserSettings(activeSession.username, activeSession);
   }
   // Forward instantly to Python's embedded HTTP listener (fire-and-forget)
   const fwdBody = JSON.stringify(s);
