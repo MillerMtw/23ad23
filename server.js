@@ -60,6 +60,22 @@ function callJunkieAPI(key) {
   }).catch(e => ({ valid: false, message: e.message }));
 }
 
+const DS4_PLUGIN_URL = 'http://127.0.0.1:5002';
+function forwardToDs4Plugin(body) {
+  return new Promise((resolve) => {
+    const data = JSON.stringify(body);
+    const req = http.request(`${DS4_PLUGIN_URL}/api/controller`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) }
+    }, res => {
+      resolve(true);
+    });
+    req.on('error', () => resolve(false));
+    req.write(data);
+    req.end();
+  });
+}
+
 const AUTH_FILE = path.join(process.env.TEMP || '.', 'Axyst', 'auth.json');
 const LOG_FILE = path.join(process.env.TEMP || '.', 'Vykron', 'server.log');
 // Detect correct Documents folder (OneDrive or regular)
@@ -783,6 +799,38 @@ app.get('/api/shutdown', (req, res) => {
     logToFile('No saved user found');
   }
   res.json({ ok: true });
+});
+
+app.post('/api/ds4', (req, res) => {
+  forwardToDs4Plugin(req.body);
+  res.json({ ok: true });
+});
+
+app.get('/api/ds4/health', async (req, res) => {
+  try {
+    const pyHealth = await new Promise(resolve => {
+      const req2 = http.get('http://127.0.0.1:5001/api/ds4/health', r => {
+        let body = '';
+        r.on('data', c => body += c);
+        r.on('end', () => { try { resolve(JSON.parse(body)); } catch { resolve(null); } });
+      });
+      req2.on('error', () => resolve(null));
+      req2.setTimeout(1000, () => { req2.destroy(); resolve(null); });
+    });
+    const pluginAlive = await new Promise(resolve => {
+      const req2 = http.get('http://127.0.0.1:5002/', r => { resolve(true); });
+      req2.on('error', () => resolve(false));
+      req2.setTimeout(500, () => { req2.destroy(); resolve(false); });
+    });
+    res.json({
+      ds4_plugin: pyHealth?.ds4_plugin || pluginAlive || false,
+      python_alive: !!pyHealth,
+      models: pyHealth?.models || [],
+      model_folder: pyHealth?.model_folder || ''
+    });
+  } catch {
+    res.json({ ds4_plugin: false, python_alive: false, models: [], model_folder: '' });
+  }
 });
 
 app.post('/api/open-folder', (req, res) => {
