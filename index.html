@@ -350,6 +350,13 @@
               </span>
             </div>
           </div>
+          <div class="flex items-center justify-between pt-2 border-t border-zinc-800/50">
+            <div class="flex items-center gap-2">
+              <span id="ds4-indicator" class="w-2 h-2 rounded-full bg-zinc-700"></span>
+              <span class="text-[11px] text-zinc-500">DS4Windows Bridge</span>
+            </div>
+            <span id="ds4-status" class="text-[10px] text-zinc-600">checking...</span>
+          </div>
         </div>
 
       </div>
@@ -1536,11 +1543,35 @@ function connectProfileUpdates() {
   }
 }
 
+async function checkDS4() {
+  try {
+    const r = await fetch('/api/ds4/health');
+    const data = await r.json();
+    const indicator = document.getElementById('ds4-indicator');
+    const status = document.getElementById('ds4-status');
+    if (data.ds4_plugin) {
+      indicator.className = 'w-2 h-2 rounded-full bg-green-500';
+      status.textContent = 'connected (' + (data.models || []).length + ' models)';
+    } else {
+      indicator.className = 'w-2 h-2 rounded-full bg-zinc-700';
+      status.textContent = data.python_alive ? 'plugin not found' : 'python offline';
+    }
+  } catch {
+    const indicator = document.getElementById('ds4-indicator');
+    const status = document.getElementById('ds4-status');
+    if (indicator) indicator.className = 'w-2 h-2 rounded-full bg-red-500';
+    if (status) status.textContent = 'offline';
+  }
+}
+
 setInterval(async () => {
   if (!session) return;
   const r = await api('GET', '/status');
   if (r.ok) updateStatus(r);
 }, 2000);
+
+setInterval(checkDS4, 5000);
+checkDS4();
   </script>
 
   <div id="toast-container" class="fixed bottom-6 right-6 z-50 flex flex-col gap-2 max-w-sm pointer-events-none"></div>
